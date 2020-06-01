@@ -21,9 +21,11 @@
  */
 
 #include <string.h>
+#include <stdlib.h>
 
 #include "mfcc.h"
 #include "float.h"
+#include "arm_math.h"
 
 MFCC::MFCC(int num_mfcc_features, int frame_len, int mfcc_dec_bits) 
 :num_mfcc_features(num_mfcc_features), 
@@ -34,46 +36,77 @@ MFCC::MFCC(int num_mfcc_features, int frame_len, int mfcc_dec_bits)
   // Round-up to nearest power of 2.
   frame_len_padded = pow(2,ceil((log(frame_len)/log(2))));
 
-  frame = new float[frame_len_padded];
-  buffer = new float[frame_len_padded];
-  mel_energies = new float[NUM_FBANK_BINS];
+  frame =  (float *)malloc(frame_len_padded * sizeof(float));
+  buffer = (float *)malloc(frame_len_padded * sizeof(float));
+  mel_energies = (float *)malloc(NUM_FBANK_BINS * sizeof(float));
 
   //create window function
-  window_func = new float[frame_len];
+  window_func = (float *)malloc(frame_len * sizeof(float));
   for (int i = 0; i < frame_len; i++)
     window_func[i] = 0.5 - 0.5*cos(M_2PI * ((float)i) / (frame_len));
 
   //create mel filterbank
-  fbank_filter_first = new int32_t[NUM_FBANK_BINS];
-  fbank_filter_last = new int32_t[NUM_FBANK_BINS];;
+  fbank_filter_first = (int32_t *)malloc(NUM_FBANK_BINS * sizeof(int32_t));
+  fbank_filter_last = (int32_t *)malloc(NUM_FBANK_BINS * sizeof(int32_t));
   mel_fbank = create_mel_fbank();
   
   //create DCT matrix
   dct_matrix = create_dct_matrix(NUM_FBANK_BINS, num_mfcc_features);
 
   //initialize FFT
-  rfft = new arm_rfft_fast_instance_f32;
+  rfft = (arm_rfft_fast_instance_f32 *)malloc(sizeof(arm_rfft_fast_instance_f32));
   arm_rfft_fast_init_f32(rfft, frame_len_padded);
 
 }
 
+void MFCC::init(int num_mfcc_features, int frame_len, int mfcc_dec_bits) {
+  
+  num_mfcc_features = num_mfcc_features;
+  frame_len = frame_len;
+  mfcc_dec_bits = mfcc_dec_bits;
+
+  // Round-up to nearest power of 2.
+  frame_len_padded = pow(2,ceil((log(frame_len)/log(2))));
+
+  frame =  (float *)malloc(frame_len_padded * sizeof(float));
+  buffer = (float *)malloc(frame_len_padded * sizeof(float));
+  mel_energies = (float *)malloc(NUM_FBANK_BINS * sizeof(float));
+
+  //create window function
+  window_func = (float *)malloc(frame_len * sizeof(float));
+  for (int i = 0; i < frame_len; i++)
+    window_func[i] = 0.5 - 0.5*cos(M_2PI * ((float)i) / (frame_len));
+
+  //create mel filterbank
+  fbank_filter_first = (int32_t *)malloc(NUM_FBANK_BINS * sizeof(int32_t));
+  fbank_filter_last = (int32_t *)malloc(NUM_FBANK_BINS * sizeof(int32_t));
+  mel_fbank = create_mel_fbank();
+  
+  //create DCT matrix
+  dct_matrix = create_dct_matrix(NUM_FBANK_BINS, num_mfcc_features);
+
+  //initialize FFT
+  rfft = (arm_rfft_fast_instance_f32 *)malloc(sizeof(arm_rfft_fast_instance_f32));
+  arm_rfft_fast_init_f32(rfft, frame_len_padded);
+}
+
 MFCC::~MFCC() {
-  delete []frame;
-  delete [] buffer;
-  delete []mel_energies;
-  delete []window_func;
-  delete []fbank_filter_first;
-  delete []fbank_filter_last;
-  delete []dct_matrix;
-  delete rfft;
+  free(frame);
+  free(buffer);
+  free(mel_energies);
+  free(window_func);
+  free(fbank_filter_first);
+  free(fbank_filter_last);
+  free(dct_matrix);
+  free(rfft);
   for(int i=0;i<NUM_FBANK_BINS;i++)
-    delete mel_fbank[i];
-  delete mel_fbank;
+    free(mel_fbank[i]);
+  free(mel_fbank);
 }
 
 float * MFCC::create_dct_matrix(int32_t input_length, int32_t coefficient_count) {
   int32_t k, n;
-  float * M = new float[input_length*coefficient_count];
+  float * M = (float *) malloc(input_length * coefficient_count * sizeof(float));
   float normalizer;
   arm_sqrt_f32(2.0/(float)input_length,&normalizer);
   for (k = 0; k < coefficient_count; k++) {
@@ -94,9 +127,10 @@ float ** MFCC::create_mel_fbank() {
   float mel_high_freq = MelScale(MEL_HIGH_FREQ); 
   float mel_freq_delta = (mel_high_freq - mel_low_freq) / (NUM_FBANK_BINS+1);
 
-  float *this_bin = new float[num_fft_bins];
+  float *this_bin = (float *)malloc(num_fft_bins * sizeof(float));
 
-  float ** mel_fbank =  new float*[NUM_FBANK_BINS];
+  // float ** mel_fbank =  new float*[NUM_FBANK_BINS];
+  float ** mel_fbank =  (float **) malloc(NUM_FBANK_BINS * sizeof(float *));
 
   for (bin = 0; bin < NUM_FBANK_BINS; bin++) {
 
@@ -128,7 +162,7 @@ float ** MFCC::create_mel_fbank() {
 
     fbank_filter_first[bin] = first_index;
     fbank_filter_last[bin] = last_index;
-    mel_fbank[bin] = new float[last_index-first_index+1]; 
+    mel_fbank[bin] = (float *) malloc((last_index-first_index+1) * sizeof(float)); 
 
     int32_t j = 0;
     //copy the part we care about
@@ -136,7 +170,7 @@ float ** MFCC::create_mel_fbank() {
       mel_fbank[bin][j++] = this_bin[i];
     }
   }
-  delete []this_bin;
+  free(this_bin);
   return mel_fbank;
 }
 
